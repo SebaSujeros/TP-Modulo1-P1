@@ -5,7 +5,7 @@
 }
 
 body {
-    overflow: hidden;  /* ← saca la barra de scroll */
+    overflow: hidden;  /* saca la barra de scroll */
     background: #000;
 }
 

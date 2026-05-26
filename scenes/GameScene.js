@@ -2,7 +2,13 @@ export class GameScene extends Phaser.Scene {
 
     constructor() {
         super("GameScene")
-        this.collected = []  // ← array, no objeto
+    }
+
+    init() {
+        // Se resetea cada vez que arranca la escena
+        this.collected = []
+        this.score = 0
+        this.timeLeft = 60
     }
 
     preload() {
@@ -10,59 +16,101 @@ export class GameScene extends Phaser.Scene {
     }
 
     create() {
-        // FONDO
-        this.add.rectangle(400, 300, 800, 600, 0x1a1a2e)
+    // Fondo
+    this.add.rectangle(400, 300, 800, 600, 0x1a1a2e)
 
-        // PISO
-        this.ground = this.add.rectangle(400, 570, 800, 60, 0x654321)
-        this.physics.add.existing(this.ground, true)
+    // Piso
+    this.ground = this.add.rectangle(400, 570, 800, 60, 0x654321)
+    this.physics.add.existing(this.ground, true)
 
-        // JUGADOR
-        this.player = this.physics.add.sprite(400, 500, "player")
-        this.player.setDisplaySize(50, 50)
-        this.player.body.setGravityY(500)
+    // Plataformas
+    const platData = [
+        { x: 200, y: 430, w: 160, h: 20 },
+        { x: 600, y: 430, w: 160, h: 20 },
+    ]
+    this.extraPlatforms = []
+    platData.forEach(p => {
+        const plat = this.add.rectangle(p.x, p.y, p.w, p.h, 0x8B4513)
+        this.physics.add.existing(plat, true)
+        this.extraPlatforms.push(plat)
+    })
 
-        // COLISION jugador con piso
-        this.physics.add.collider(this.player, this.ground)
+    // Jugador
+    this.player = this.physics.add.sprite(400, 500, "player")
+    this.player.setDisplaySize(50, 50)
+    this.player.body.setGravityY(800)
 
-        // INPUT
-        this.cursors = this.input.keyboard.createCursorKeys()
+    // Paredes (después de crear el jugador porque sino revienta todo)
+    this.wallLeft  = this.add.rectangle(0, 300, 10, 600)
+    this.wallRight = this.add.rectangle(800, 300, 10, 600)
+    this.physics.add.existing(this.wallLeft, true)
+    this.physics.add.existing(this.wallRight, true)
 
-        // GRUPO ITEMS
-        this.items = this.physics.add.group()
+    // Colisiones jugador
+    this.physics.add.collider(this.player, this.ground)
+    this.physics.add.collider(this.player, this.wallLeft)
+    this.physics.add.collider(this.player, this.wallRight)
+    this.extraPlatforms.forEach(p => {
+        this.physics.add.collider(this.player, p)
+    })
 
-        // ✅ Colliders DESPUÉS de definir items y ground
-        this.physics.add.collider(this.player, this.ground)
-        this.physics.add.collider(this.items, this.ground, (a, b) => {
-        if (a.shapeType) {
-            a.destroy()
-        } else {
-            b.destroy()
-        }
-})
+    // Input
+    this.cursors = this.input.keyboard.createCursorKeys()
 
-        // OVERLAP jugador con ítems (recolección)
-        this.physics.add.overlap(
-            this.player,
-            this.items,
-            this.collectItem,
-            null,
-            this
-        )
+    // GRrupo items
+    this.items = this.physics.add.group()
 
-        // SPAWN cada 1 segundo
-        this.time.addEvent({
-            delay: 1000,
-            callback: this.spawnItem,
-            callbackScope: this,
-            loop: true
+    // Collider items con piso
+    this.physics.add.collider(this.items, this.ground, (a, b) => {
+        const item = a.shapeType ? a : b
+        item.bounceHealth--
+        if (item.bounceHealth <= 0) item.destroy()
+    })
+
+    // Collider items con plataformas
+    this.extraPlatforms.forEach(p => {
+        this.physics.add.collider(this.items, p, (a, b) => {
+            const item = a.shapeType ? a : b
+            item.bounceHealth--
+            if (item.bounceHealth <= 0) item.destroy()
         })
+    })
 
-        // UI
-        this.scoreText = this.add.text(16, 16,
-            'Cuadrados: 0 | Triángulos: 0 | Rombos: 0',
-            { fontSize: '16px', fill: '#ffffff' }
-        )
+    // Ooverlap jugador con ítems
+    this.physics.add.overlap(this.player, this.items, this.collectItem, null, this)
+
+    // Spawn
+    this.time.addEvent({
+        delay: 500,
+        callback: this.spawnItem,
+        callbackScope: this,
+        loop: true
+    })
+
+    // Timer
+    this.time.addEvent({
+        delay: 1000,
+        callback: this.updateTimer,
+        callbackScope: this,
+        loop: true
+    })
+
+    // UI
+    this.scoreText = this.add.text(16, 16, 'Puntaje: 0', {
+        fontSize: '20px', fill: '#ffffff'
+    })
+    this.timerText = this.add.text(784, 16, 'Tiempo: 60', {
+        fontSize: '20px', fill: '#ffffff'
+    }).setOrigin(1, 0)
+}
+
+    updateTimer() {
+        this.timeLeft--
+        this.timerText.setText(`Tiempo: ${this.timeLeft}`)
+
+        if (this.timeLeft <= 0) {
+            this.scene.start("EndScene", { won: false, score: this.score })
+        }
     }
 
     createShapeTexture(type, color) {
@@ -85,12 +133,18 @@ export class GameScene extends Phaser.Scene {
                 g.fillTriangle(20, 0, 40, 20, 20, 40)
                 g.fillTriangle(20, 0, 0, 20, 20, 40)
                 g.strokePoints([
-                    { x: 20, y: 0 },
-                    { x: 40, y: 20 },
-                    { x: 20, y: 40 },
-                    { x: 0, y: 20 },
+                    { x: 20, y: 0 }, { x: 40, y: 20 },
+                    { x: 20, y: 40 }, { x: 0, y: 20 },
                     { x: 20, y: 0 }
                 ])
+            }
+            else if (type === "bad") {
+                // Cuadrado rojo oscuro con X blanca
+                g.fillStyle(0x880000, 1)
+                g.fillRect(0, 0, 40, 40)
+                g.lineStyle(4, 0xffffff, 1)
+                g.lineBetween(5, 5, 35, 35)
+                g.lineBetween(35, 5, 5, 35)
             }
 
             g.generateTexture(key, 40, 40)
@@ -102,44 +156,52 @@ export class GameScene extends Phaser.Scene {
 
     spawnItem() {
         const x = Phaser.Math.Between(50, 750)
+
         const types = ["square", "triangle", "diamond"]
         const colors = {
-            square: 0xff4444,
+            square:   0xff4444,
             triangle: 0x4444ff,
-            diamond: 0xffdd00
+            diamond:  0xffdd00,
+            bad:      0x880000
+        }
+        // Puntaje por tipo (Mejora 2), bad resta (Mejora 5)
+        const pointValues = {
+            square:   10,
+            triangle: 15,
+            diamond:  20,
+            bad:      -25
         }
 
-        const randomType = Phaser.Utils.Array.GetRandom(types)
+        // 20% de probabilidad de item malo
+        const isBad = Phaser.Math.Between(1, 5) === 1
+        const randomType = isBad ? "bad" : Phaser.Utils.Array.GetRandom(types)
         const textureKey = this.createShapeTexture(randomType, colors[randomType])
 
         const item = this.physics.add.image(x, 0, textureKey)
-        item.setDisplaySize(40, 40)
-        item.body.setGravityY(0)
-        item.shapeType = randomType
-
+        
         this.items.add(item)
+        item.setDisplaySize(40, 40)
+        item.body.setGravityY(400)
+        item.setBounce(0.6)
         item.setVelocityY(200)
-
-        item.checkWorldBounds = true
-        item.outOfBoundsKill = true
+        item.shapeType = randomType
+        item.pointValue = pointValues[randomType]
+        item.bounceHealth = 2
     }
 
     collectItem(player, item) {
-        const type = item.shapeType
+        const points = item.pointValue
 
-        this.collected.push(type)  // ✅ push funciona porque ahora es array
+        this.collected.push(item.shapeType)
+        this.score += points
+        if (this.score < 0) this.score = 0  // no baja de 0
         item.destroy()
 
-        const squares   = this.collected.filter(i => i === "square").length
-        const triangles = this.collected.filter(i => i === "triangle").length
-        const diamonds  = this.collected.filter(i => i === "diamond").length
+        this.scoreText.setText(`Puntaje: ${this.score}`)
 
-        this.scoreText.setText(
-            `Cuadrados: ${squares} | Triángulos: ${triangles} | Rombos: ${diamonds}`
-        )
-
-        if (squares >= 2 && triangles >= 2 && diamonds >= 2) {
-            this.scene.start("WinScene")
+        // Condición de victoria: superar 100 puntos (Mejora 2)
+        if (this.score >= 100) {
+            this.scene.start("EndScene", { won: true, score: this.score })
         }
     }
 
@@ -153,5 +215,11 @@ export class GameScene extends Phaser.Scene {
         else {
             this.player.body.setVelocityX(0)
         }
+        if (this.cursors.space.isDown && this.player.body.blocked.down) {
+        this.player.body.setVelocityY(-500)
+        }
+        this.items.getChildren().forEach(item => {
+            if (item.y > 650) item.destroy()
+        })
     }
 }
